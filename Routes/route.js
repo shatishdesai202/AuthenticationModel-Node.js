@@ -1,9 +1,12 @@
 const express = require('express');
+
 const route = express.Router();
 
 const chalk = require('chalk');
 
-const { userValidation } = require('../Validation/joiValidation');
+const {
+  userValidation
+} = require('../Validation/joiValidation');
 
 const MODEL = require('../Database/user');
 
@@ -13,59 +16,161 @@ const nodemailerSendgrid = require('nodemailer-sendgrid');
 
 const jwt = require('jsonwebtoken');
 
-const sgMail = require('@sendgrid/mail');
+const bcrypt = require('bcryptjs');
 
-// sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
-const transport = nodemailer.createTransport(nodemailerSendgrid({
-    apiKey: process.env.SENDGRID_API_KEY
-}));
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: 'shatpatel000@gmail.com',
+    pass: 'Abc@123123'
+  }
+});
 
-route.post('/signup', async (req, res)=>{
-    
-    let { error } = userValidation(req.body);
-    
+
+
+route.post('/signup', async (req, res) => {
+
+  let { error } = userValidation(req.body);
+
+  if (error) { return res.status(400).send(error.details[0].message); }
+
+  const { name, email, gender,password } = req.body;
+
+  let isExist = await MODEL.findOne({ email: email });
+
+  if (isExist) { return res.status(400).send('email is exist'); }
+
+  const token = jwt.sign({ name, email, gender, password }, process.env.JWT_SECURITY_KEY , { expiresIn: '20m' });
+  console.log(chalk.redBright.bgCyanBright(token));
+  
+  // var transporter = nodemailer.createTransport({
+  //   service: 'gmail',
+  //   auth: {
+  //     user: 'shatpatel000@gmail.com',
+  //     pass: 'Abc@123123'
+  //   }
+  // });
+
+  var mailOptions = {
+    from: 'shatpatel000@gmail.com',
+    to: email,
+    subject: 'Sending Email using Node.js',
+    html: `<h1> Activation Email </h1>
+           <strong> Welcome ${name} Kindly Activate Your Email </strong>
+           ${process.env.CLIENT_URL}/authenticationEmail/${token}`
+  };
+
+   transporter.sendMail(mailOptions, function (error, info) {
     if (error) {
-        return res.status(400).send(error.details[0].message);
+      console.log(error);
+    } else {
+      console.log('Email sent: ' + info.response);
+      res.json({
+        message : "Email has send successfully kindly check your inbox"
+      })
+    }
+  });
+
+});
+
+route.post('/authenticationEmail/:id' , async (req, res)=>{
+
+  token = req.params.id;
+  
+  jwt.verify(token, process.env.JWT_SECURITY_KEY , async function (err, decodedToken) {
+    
+    if (err) {
+      console.log(err);
+      return res.status(400).json({
+            error: "Incorrect or Expire Link"
+        });
     }
 
-    const { name, email, gender, password } = req.body;
+    let { name, email, gender, password } = decodedToken;
 
-    let isExist = await MODEL.findOne({ email: email });
-
-    if (isExist) { return res.status(400).send('email is exist'); }
-
-    const token = jwt.sign({ name, email, gender, password }, process.env.JWT_SECURITY_KEY, { expiresIn: '20m' });
-    console.log(chalk.yellow(token));
+    let isExist = await MODEL.findOne({
+            email: email
+        });
     
-    transport
-        .sendMail({
-            from: 'shatpatel000@gmail.com',
-            to: email,
-            subject: 'Account verification',
-            html: `<h1>Account verification Link</h1>
-                ${name} <br> ${process.env.CLIENT_URL}/authentication/${token} `
-        })
-        .then(([resp]) => {
-            // console.log('Email Has Been Send', res.statusCode, res.statusMessage);
-            res.json({
-                message: ' Email has send successfully kindly verify your account'
-            })
-        })
-        .catch(err => {
-            console.log('Errors occurred, failed to deliver message');
+    if (isExist) {
+          return res.status(400).send('Your Account is Already Activated');
+    }
 
-            if (err.response && err.response.body && err.response.body.errors) {
-                err.response.body.errors.forEach(error => console.log('%s: %s', error.field, error.message));
-            } else {
-                console.log(err);
-            }
+    // Hash Password
+    const salt = await bcrypt.genSalt(1);
+    const hashedpassword = await bcrypt.hash(password, salt);
+  
+    let insertUser = await new MODEL({
+      name: name,
+      email: email,
+      gender: gender,
+      password: hashedpassword
+    });
+
+    try {
+
+      let saveUser = await insertUser.save();
+      res.send(saveUser);
+
+    } catch (error) {
+
+        res.status(400).send(error);
+        console.log('saveUSER' + error);
+
+    }
+
+  });
+
+});
+
+route.put('/resetpassword', async(req, res)=>{
+
+  let { email } = req.body;
+
+  await MODEL.findOne({ email }, async(err, user)=>{
+
+    if (err || !user) {
+      return res.status(400).json({
+          error: "Email Does Not Exist"
+      });
+    }
+
+    const token = jwt.sign( { _id: user._id }, process.env.JWT_SECURITY_KEY , { expiresIn: '20m' });
+    
+    return await user.updateOne({ resetPassword : token }, (err, success)=>{
+
+      if(err){
+        return res.status(400).json({
+          error : "Error in Reset Password Link"
+        })
+      }else{
+
+        var mailOptions = {
+          from: 'shatpatel000@gmail.com',
+          to: email,
+          subject: 'Sending Email using Node.js',
+          html: `<h1> RESET PASSWORD LINK </h1>
+                 <strong> Welcome ${success.name} Kindly Activate Your Email </strong>
+                 ${process.env.CLIENT_URL}/resetpassword/${token}`
+        };
+      
+         transporter.sendMail(mailOptions, function (error, info) {
+          if (error) {
+            console.log(error);
+          } else {
+            console.log('Email sent: ' + info.response);
+            res.json({
+              message : "reset password link send successfully"
+            })
+          }
         });
 
+      }
 
+    });
 
-
-    res.send('O');
+  });
 
 });
 
