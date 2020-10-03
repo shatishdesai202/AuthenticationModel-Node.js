@@ -23,8 +23,8 @@ const verifyToken = require('../Validation/jwtValidation');
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: 'shatpatel000@gmail.com',
-    pass: 'Abc@123123'
+    user: '--> email <--@gmail.com',
+    pass: '--> password <--'
   }
 });
 
