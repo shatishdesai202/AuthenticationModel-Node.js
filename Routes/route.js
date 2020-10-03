@@ -4,7 +4,7 @@ const route = express.Router();
 
 const chalk = require('chalk');
 
-const { userValidation } = require('../Validation/joiValidation');
+const { userValidation, loginValidation } = require('../Validation/joiValidation');
 
 const MODEL = require('../Database/user');
 
@@ -18,6 +18,7 @@ const bcrypt = require('bcryptjs');
 
 const _ = require('lodash');
 
+const verifyToken = require('../Validation/jwtValidation');
 
 const transporter = nodemailer.createTransport({
   service: 'gmail',
@@ -259,6 +260,43 @@ route.post('/reset/:id', async(req, res)=>{
     });
   
   }
+
+});
+
+route.post('/login', async(req, res)=>{
+
+  let { error } = loginValidation(req.body);
+  if (error) return res.status(400).send(error.details[0].message);
+
+  const findUser = await MODEL.findOne({
+    email: req.body.email
+  });
+
+  if (!findUser) {
+      return res.status(400).send('Email Not Found');
+  }
+
+  const validPassword = await bcrypt.compare(req.body.password, findUser.password)
+  if (!validPassword) {
+      return res.status(400).send('Password Is Wrong');
+  }
+
+  const token = jwt.sign({
+      _id: findUser._id
+  }, process.env.JWT_SECURITY_KEY );
+  res.header('auth-token', token).send(token);
+
+});
+
+route.get('/home', verifyToken, async (req, res)=>{
+
+  let userData = req.user._id;
+
+  const findUser = await MODEL.findOne({
+      _id: userData
+  });
+
+  res.json(findUser);
 
 });
 

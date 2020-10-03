@@ -16,5 +16,19 @@ const userValidation = data => {
 
 };
 
+const loginValidation = data => {
+
+    const schema = Joi.object({
+
+        email: Joi.string().email(),
+        password : Joi.string().min(3).required(),
+
+    });
+
+    return schema.validate(data)
+
+};
+
 
 module.exports.userValidation = userValidation;
+module.exports.loginValidation = loginValidation;
