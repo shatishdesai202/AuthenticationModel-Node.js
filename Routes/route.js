@@ -4,9 +4,7 @@ const route = express.Router();
 
 const chalk = require('chalk');
 
-const {
-  userValidation
-} = require('../Validation/joiValidation');
+const { userValidation } = require('../Validation/joiValidation');
 
 const MODEL = require('../Database/user');
 
@@ -17,6 +15,8 @@ const nodemailerSendgrid = require('nodemailer-sendgrid');
 const jwt = require('jsonwebtoken');
 
 const bcrypt = require('bcryptjs');
+
+const _ = require('lodash');
 
 
 const transporter = nodemailer.createTransport({
@@ -174,5 +174,92 @@ route.put('/resetpassword', async(req, res)=>{
 
 });
 
+route.post('/reset/:id', async(req, res)=>{
+
+  let { newpassword } = req.body;
+  
+  let ID = req.params.id;
+
+  console.log(chalk.yellowBright(ID));
+
+  if(ID){
+
+    jwt.verify(ID, process.env.JWT_SECURITY_KEY, async function (error, decodedToken) {
+      
+      if(error){
+
+        console.log(error)
+                return res.status(401).json({
+                    error: 'Incorrect token or it is expired'
+                })
+
+      }
+      await MODEL.findOne({resetPassword : ID}, async(err, user)=>{
+
+        if(err || !user){
+
+          return res.status(400).json({
+            error: "user not exist"
+        });
+        }
+        // Hash Password
+        const salt = await bcrypt.genSalt(1);
+        const hashedpassword = await bcrypt.hash(newpassword, salt);
+
+        const obj = {
+          password: hashedpassword,
+          resetPassword: ''
+        };
+
+        user = _.extend(user, obj);
+
+        await user.save( (err, result)=>{
+
+          if(err){
+
+            console.log(err)
+            return res.status(400).json({ error: 'reset password error' })
+
+          }else{
+
+            var mailOptions = {
+              from: 'shatpatel000@gmail.com',
+              to: result.email,
+              subject: 'RESET PASSWORD SUCCESS',
+              html: `<h1> Your Password Was Successfully reset </h1>`
+            };
+
+            transporter.sendMail(mailOptions, function (error, info) {
+              if (error) {
+                console.log(error);
+              } else {
+                console.log('Email sent: ' + info.response);
+                res.json({
+                  message : "reset password SuccessMessage"
+                })
+              }
+            });
+
+          }
+
+          return res.status(200).json({
+            message: 'success'
+        })
+
+        })
+
+      })
+
+    })
+
+  }else{
+    
+    return res.status(401).json({
+      error: "Authentication Error!!"
+    });
+  
+  }
+
+});
 
 module.exports = route;
